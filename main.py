@@ -1,210 +1,192 @@
 import statistics
 import matplotlib.pyplot as plt
 import numpy as np
+from sklearn.cluster import KMeans
 
 def max_difference(samples):
     return max([abs(j - i) for i, j in zip(samples[:-1], samples[1:])])
 def extract_spike_window(data, index, window_size=48):
-    half_window = window_size // 2
-    start = max(index - half_window, 0)
-    end = min(index + half_window, len(data))
-    spike_window = data[start:end]
-
-    # Pad the spike window if necessary
-    if len(spike_window) < window_size:
-        if start == 0:
-            # Pad at the beginning
-            spike_window = [0] * (window_size - len(spike_window)) + spike_window
-        else:
-            # Pad at the end
-            spike_window += [0] * (window_size - len(spike_window))
+    spike_window = []
+    print(index)
+    print(len(data))
+    start = index - 24 if index > 24 else 0
+    end = index + 24
+    print(start, end)
+    for i in range(start, end):
+        spike_window.append(data[i])
 
     return spike_window
+def read_data(filename):
+    f = open(filename, "r")
+    # process file line by line
+    lines = f.readlines()
+    # close the file
+    f.close()
+
+    # create a list to store the data
+    electrode1 = []
+    electrode2 = []
+
+    # loop over lines
+    for line in lines:
+        # split line into words
+        words = line.split()
+        # convert words into integers
+        electrode1.append(float(words[0]))
+        electrode2.append(float(words[1]))
+
+    return electrode1, electrode2
+
+def detect_spikes(electrode, threshold):
+    spikes = []
+    spikesindex = []
+    localMax = 0.0
+    localMaxIndex = 0
+    prevMax = False
+    for i in range(len(electrode)):
+        if electrode[i] > threshold:
+            if electrode[i] > localMax:
+                localMax = electrode[i]
+                localMaxIndex = i
+            prevMax = True
+        elif prevMax:
+            spikesindex.append(localMaxIndex)
+            spikes.append(localMax)
+            localMax = 0.0
+            prevMax = False
+    return spikesindex, spikes
 
 
-f = open("Data.txt", "r")
-# process file line by line
-lines = f.readlines()
-# close the file
-f.close()
+def calculate_threshold(electrode, window_size=500):
+    # Calculate the standard deviation of the first 500 samples
+    std_dev = statistics.stdev(electrode[:window_size])
 
-# create a list to store the data
-electrode1 = []
-electrode2 = []
+    # Calculate the threshold
+    threshold = 3.5 * std_dev
 
-# loop over lines
-for line in lines:
-    # split line into words
-    words = line.split()
-    # convert words into integers
-    electrode1.append(float(words[0]))
-    electrode2.append(float(words[1]))
-#calculate the standard deviation of the data of the first 500 samples of each electrode 
+    return threshold
 
-threshold1 = 3.5*statistics.stdev(electrode1[0:500])
-threshold2 = 3.5*statistics.stdev(electrode2[0:500])
+def calculate_spike_features( spikes_index, electrode, spikes, window_size=48):
+    std_devs = []
+    max_diffs = []
+    for i in range(len(spikes)):
+        start = spikes_index[i] - 24 if i > 0 else 0
+        end = spikes_index[i]
+        spike_samples = electrode[start:end]
+        std_devs.append(statistics.stdev(spike_samples))
+        max_diffs.append(max_difference(spike_samples))
+    return std_devs, max_diffs
 
-spikes1index = []
-spikes2index = []
-spikes1 = []
-spikes2 = []
-localMax1 = 0.0
-for i in range(len(electrode1)):
-    if electrode1[i] > threshold1:
-        if electrode1[i] > localMax1:
-            localMax1 = electrode1[i]
+def cluster_spike_features(std_devs, max_diffs, k=2):
+    features = list(zip(std_devs, max_diffs))
+
+    # Apply k-means clustering
+    kmeans = KMeans(n_clusters=k, random_state=0).fit(features)
+    clusters = kmeans.labels_
+    plt.scatter(std_devs, max_diffs, c=clusters)
+    plt.xlabel("Standard Deviation")
+    plt.ylabel("Max Difference")
+    plt.show()
+
+
+    return clusters
+
+def extract_spike_windows(electrode, spikes, window_size=48):
+    spike_windows = []
+    for i in spikes:
+        spike_windows.append(extract_spike_window(electrode, i))
+    return spike_windows
+
+# Read data from file
+electrode1, electrode2 = read_data("Data.txt")
+
+# Calculate the threshold for each electrode
+threshold1 = calculate_threshold(electrode1)
+threshold2 = calculate_threshold(electrode2)
+
+# Detect spikes for each electrode
+spikes1index, spikes1 = detect_spikes(electrode1, threshold1)
+spikes2index, spikes2 = detect_spikes(electrode2, threshold2)
+
+
+# Calculate the standard deviation and max difference for each spike
+std_devs1, max_diffs1 = calculate_spike_features(spikes1index, electrode1, spikes1)
+std_devs2, max_diffs2 = calculate_spike_features(spikes2index, electrode2, spikes2)
+
+# Cluster the spikes
+clusters1 = cluster_spike_features(std_devs1, max_diffs1)
+clusters2 = cluster_spike_features(std_devs2, max_diffs2)
+
+# Extract spike windows
+spike_windows1 = extract_spike_windows(electrode1, spikes1index)
+spike_windows2 = extract_spike_windows(electrode2, spikes2index)
+
+def separate_neurons(clusters,spikes):
+    neuron1_value = []
+    neuron2_value = []
+    neuron1_index = []
+    neuron2_index = []
+    for i in range(len(clusters)):
+        if clusters[i] == 0:
+            neuron1_value.append(spikes[i])
+            neuron1_index.append(i)
         else:
-            spikes1index.append(i)
-            spikes1.append(localMax1)
-            localMax1 = 0.0
-            i = i + 24
-localMax2 = 0.0
-for i in range(len(electrode2)):
-    if electrode2[i] > threshold2:
-        if electrode2[i] > localMax2:
-            localMax2 = electrode2[i]
-        else:
-            spikes2index.append(i)
-            spikes2.append(localMax2)
-            localMax2 = 0.0
-            i = i + 24
-print(spikes1index[0:10])
-print(spikes1[0:10])
+            neuron2_value.append(spikes[i])
+            neuron2_index.append(i)
 
-# Calculate standard deviation and max difference for each spike
-std_devs1 = []
-max_diffs1 = []
-for i in range(len(spikes1index)):
-    start = spikes1index[i] - 24 if i > 0 else 0
-    end = spikes1index[i]
-    spike_samples = electrode1[start:end]
-    std_devs1.append(statistics.stdev(spike_samples))
-    max_diffs1.append(max_difference(spike_samples))
 
-# Plotting the standard deviation of each spike vs the max difference of each spike
-plt.scatter(std_devs1, max_diffs1)
-plt.xlabel("Standard Deviation")
-plt.ylabel("Max Difference")
-plt.show()
+# Calculate the mean spike for each neuron
+mean_spike1 = np.mean(spike_windows1, axis=0)
+mean_spike2 = np.mean(spike_windows2, axis=0)
+
+def plot_mean_spike(mean_spike, color='blue'):
+    plt.plot(mean_spike, color=color)
+    plt.xlabel("Time (ms)")
+    plt.ylabel("Voltage (uV)")
+    plt.show()
 
 
 
+def get_timestamps(spikes_index, sampling_rate=24414):
+    timestamps = []
+    for i in spikes_index:
+        timestamps.append(i / sampling_rate)
+    return timestamps
 
+def plot_spikes(electrode, spikes_index, spikes, sampling_rate=24414):
+    # Assuming a sampling rate, convert index to time (in seconds)
+    time = [i / sampling_rate for i in range(len(electrode))]  # Time for the first 20000 samples
 
-# electrode 2
-std_devs2 = []
-max_diffs2 = []
-for i in range(len(spikes2index)):
-    start = spikes2index[i] - 24 if i > 0 else 0
-    end = spikes2index[i]
-    spike_samples = electrode2[start:end]
-    std_devs2.append(statistics.stdev(spike_samples))
-    max_diffs2.append(max_difference(spike_samples))
+    # Plotting the first 20,000 samples with detected spikes for Electrode 1
+    plt.figure(figsize=(15, 5))
+    plt.plot(time, electrode, label='Electrode 1 Raw Data')
 
-# Plotting the standard deviation of each spike vs the max difference of each spike
-plt.scatter(std_devs2, max_diffs2)
-plt.xlabel("Standard Deviation")
-plt.ylabel("Max Difference")
-plt.show()
+    # Convert spike indices to time and plot
+    for i in range(len(spikes_index)):
+        spike_time = spikes_index[i] / sampling_rate
+        plt.plot(spike_time, spikes[i], 'r*', label='Neuron 1' if i == 0 else "")
 
-from sklearn.cluster import KMeans
+    plt.xlabel('Time (s)')
+    plt.ylabel('Voltage (uV)')
+    plt.title('Electrode 1 Spike Detection with Time')
+    plt.legend()
+    plt.show()
 
-features1 = list(zip(std_devs1, max_diffs1))
-features2 = list(zip(std_devs2, max_diffs2))
-
-# Apply k-means clustering with k=2 for electrode 1
-kmeans1 = KMeans(n_clusters=2, random_state=0).fit(features1)
-clusters1 = kmeans1.labels_
-
-# Apply k-means clustering with k=2 for electrode 2
-kmeans2 = KMeans(n_clusters=2, random_state=0).fit(features2)
-clusters2 = kmeans2.labels_
-
-#plot the standard deviation of each spike vs the max difference of each spike for electrode 2 with k = 2
-plt.scatter(std_devs2, max_diffs2, c=clusters2)
-plt.xlabel("Standard Deviation")
-plt.ylabel("Max Difference")
-plt.show()
-
-#plot the standard deviation of each spike vs the max difference of each spike for electrode 1 with k = 2
-plt.scatter(std_devs1, max_diffs1, c=clusters1)
-plt.xlabel("Standard Deviation")
-plt.ylabel("Max Difference")
-plt.show()
-
-
-# seperate data of neruon 1 and neuron 2
-neuron1value = [[], []]
-neuron1index = [[], []]
-neuron2value = [[], []]
-neuron2index = [[], []]
-for i in range(len(clusters1)):
-    if clusters1[i] == 0:
-        neuron1value[0].append(spikes1[i])
-        neuron1index[0].append(spikes1index[i])
-    else:
-        neuron2value[0].append(spikes1[i])
-        neuron2index[0].append(spikes1index[i])
-for i in range(len(clusters2)):
-    if clusters2[i] == 0:
-        neuron1value[1].append(spikes2[i])
-        neuron1index[1].append(spikes2index[i])
-    else:
-        neuron2value[1].append(spikes2[i])
-        neuron2index[1].append(spikes2index[i])
-
-timestamps = [
-    [[], []], # Electrode 1
-    [[], []]  # Electrode 2
-]
-for i in range(len(neuron1index[0])):
-    timestamps[0][0].append(neuron1index[0][i] / 24414)
-for i in range(len(neuron2index[0])):
-    timestamps[0][1].append(neuron2index[0][i] / 24414)
-for i in range(len(neuron1index[1])):
-    timestamps[1][0].append(neuron1index[1][i] / 24414)
-for i in range(len(neuron2index[1])):
-    timestamps[1][1].append(neuron2index[1][i] / 24414)
-
-meanspike = [[], []]
-# Extracting and averaging spike windows
-neuron1windows = [[], []]
-neuron2windows = [[], []]
-for i in neuron1index[0]:
-    neuron1windows[0].append(extract_spike_window(electrode1, i))
-for i in neuron2index[0]:
-    neuron2windows[0].append(extract_spike_window(electrode1, i))
-for i in neuron1index[1]:
-    neuron1windows[1].append(extract_spike_window(electrode2, i))
-for i in neuron2index[1]:
-    neuron2windows[1].append(extract_spike_window(electrode2, i))
-
-# Calculating mean spikes
-meanspike = [
-    [np.mean(neuron1windows[0], axis=0), np.mean(neuron2windows[0], axis=0)],
-    [np.mean(neuron1windows[1], axis=0), np.mean(neuron2windows[1], axis=0)]
-]
-
-# Print the mean spike of each neuron
-print("Mean Spike of Neuron 1 in Electrode 1:", meanspike[0][0])
-print("Mean Spike of Neuron 2 in Electrode 1:", meanspike[0][1])
-print("Mean Spike of Neuron 1 in Electrode 2:", meanspike[1][0])
-print("Mean Spike of Neuron 2 in Electrode 2:", meanspike[1][1])
 
 # Plotting the mean spike of each neuron
-plt.plot(meanspike[0][0])
+plt.plot(mean_spike1[0][0])
 plt.xlabel("Time (ms)")
 plt.ylabel("Voltage (uV)")
 plt.show()
-plt.plot(meanspike[0][1])
+plt.plot(mean_spike1[0][1])
 plt.xlabel("Time (ms)")
 plt.ylabel("Voltage (uV)")
 plt.show()
-plt.plot(meanspike[1][0])
+plt.plot(meanspike1[1][0])
 plt.xlabel("Time (ms)")
 plt.ylabel("Voltage (uV)")
 plt.show()
-plt.plot(meanspike[1][1])
+plt.plot(meanspike1[1][1])
 plt.xlabel("Time (ms)")
 plt.ylabel("Voltage (uV)")
 plt.show()
