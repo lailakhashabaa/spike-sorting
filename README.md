@@ -68,11 +68,3 @@ Replace `"Data.txt"` with the path to your input data file. The data file is exp
 
 8. Generate spike timestamps for further analysis.
 
-## Output
-
-The script generates multiple plots for visualizing spike sorting results, including standard deviation vs. maximum difference plots, mean spike waveforms, and spike detection on raw data.
-
-## Note
-
-Adjust the threshold values and other parameters in the script based on your specific dataset characteristics for optimal spike sorting performance.
-
